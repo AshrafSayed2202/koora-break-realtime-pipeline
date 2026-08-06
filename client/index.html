@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Koora Break - Live Scores</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body {
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 30px;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 10px;
+      color: #38bdf8;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #94a3b8;
+      margin-bottom: 30px;
+    }
+
+    .controls {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 30px;
+      flex-wrap: wrap;
+    }
+
+    select,
+    button {
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: none;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
+    select {
+      background: #1e293b;
+      color: white;
+      border: 1px solid #334155;
+      min-width: 160px;
+    }
+
+    button {
+      background: #0ea5e9;
+      color: white;
+      font-weight: 600;
+    }
+
+    button:hover {
+      background: #0284c7;
+    }
+
+    button.unsubscribe {
+      background: #ef4444;
+    }
+
+    .status {
+      text-align: center;
+      margin-bottom: 20px;
+      font-size: 14px;
+      color: #94a3b8;
+    }
+
+    .scoreboard {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 20px;
+      max-width: 600px;
+      margin: 0 auto 30px;
+      text-align: center;
+      border: 1px solid #334155;
+    }
+
+    .score {
+      font-size: 42px;
+      font-weight: bold;
+      margin: 10px 0;
+      color: #38bdf8;
+    }
+
+    .events {
+      max-width: 600px;
+      margin: 0 auto;
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 16px;
+      border: 1px solid #334155;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+
+    .event {
+      padding: 12px 14px;
+      border-bottom: 1px solid #334155;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+    }
+
+    .event:last-child {
+      border-bottom: none;
+    }
+
+    .event-type {
+      font-weight: 600;
+      color: #38bdf8;
+    }
+
+    .goal {
+      color: #4ade80;
+    }
+
+    .card {
+      color: #fbbf24;
+    }
+
+    .red {
+      color: #f87171;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h1>Koora Break</h1>
+  <p class="subtitle">Real-time Match Events</p>
+
+  <div class="controls">
+    <select id="matchSelect">
+      <option value="match_001">Match 001</option>
+      <option value="match_002">Match 002</option>
+      <option value="match_003">Match 003</option>
+      <option value="match_004">Match 004</option>
+      <option value="match_005">Match 005</option>
+      <option value="match_006">Match 006</option>
+      <option value="match_007">Match 007</option>
+      <option value="match_008">Match 008</option>
+      <option value="match_009">Match 009</option>
+      <option value="match_010">Match 010</option>
+    </select>
+
+    <button onclick="subscribe()">Subscribe</button>
+    <button class="unsubscribe" onclick="unsubscribe()">Unsubscribe</button>
+  </div>
+
+  <div class="status" id="status">Not connected</div>
+
+  <div class="scoreboard">
+    <div>Current Match: <strong id="currentMatch">—</strong></div>
+    <div class="score" id="score">0 - 0</div>
+    <div id="matchStatus">Waiting...</div>
+  </div>
+
+  <div class="events" id="events">
+    <div style="text-align:center; color:#64748b; padding: 20px;">
+      No events yet. Subscribe to a match.
+    </div>
+  </div>
+
+  <script>
+    const socket = io('http://localhost:3000'); // NestJS default port
+    let currentMatchId = null;
+
+    const statusEl = document.getElementById('status');
+    const eventsEl = document.getElementById('events');
+    const scoreEl = document.getElementById('score');
+    const currentMatchEl = document.getElementById('currentMatch');
+    const matchStatusEl = document.getElementById('matchStatus');
+
+    socket.on('connect', () => {
+      statusEl.textContent = 'Connected to Koora Break Backend';
+      statusEl.style.color = '#4ade80';
+    });
+
+    socket.on('disconnect', () => {
+      statusEl.textContent = 'Disconnected';
+      statusEl.style.color = '#f87171';
+    });
+
+    // Receive live events
+    socket.on('matchEvent', (event) => {
+      addEvent(event);
+
+      // Update score if needed
+      if (event.type === 'GOAL') {
+        updateScoreFromEvent(event);
+      }
+    });
+
+    function subscribe() {
+      const matchId = document.getElementById('matchSelect').value;
+      currentMatchId = matchId;
+      currentMatchEl.textContent = matchId;
+
+      socket.emit('subscribe', { matchId }, (response) => {
+        console.log('Subscribe response:', response);
+
+        // Clear old events
+        eventsEl.innerHTML = '';
+
+        if (response.currentState) {
+          // Late joiner: show current score + past events
+          const state = response.currentState;
+          scoreEl.textContent = `${state.homeScore} - ${state.awayScore}`;
+          matchStatusEl.textContent = state.status;
+
+          state.events.forEach(event => addEvent(event));
+        } else {
+          scoreEl.textContent = '0 - 0';
+          matchStatusEl.textContent = 'LIVE';
+        }
+      });
+    }
+
+    function unsubscribe() {
+      if (!currentMatchId) return;
+
+      socket.emit('unsubscribe', { matchId: currentMatchId });
+      currentMatchId = null;
+      currentMatchEl.textContent = '—';
+      scoreEl.textContent = '0 - 0';
+      matchStatusEl.textContent = 'Waiting...';
+      eventsEl.innerHTML = `<div style="text-align:center; color:#64748b; padding: 20px;">Unsubscribed</div>`;
+    }
+
+    function addEvent(event) {
+      const div = document.createElement('div');
+      div.className = 'event';
+
+      let typeClass = '';
+      if (event.type === 'GOAL') typeClass = 'goal';
+      if (event.type === 'YELLOW_CARD') typeClass = 'card';
+      if (event.type === 'RED_CARD') typeClass = 'red';
+
+      div.innerHTML = `
+        <div>
+          <span class="event-type ${typeClass}">${event.type}</span>
+          ${event.player ? ` — ${event.player}` : ''}
+          ${event.team ? ` (${event.team})` : ''}
+        </div>
+        <div>${event.minute}'</div>
+      `;
+
+      eventsEl.prepend(div);
+    }
+
+    function updateScoreFromEvent(event) {
+      // Simple visual update (the real source of truth is the backend state)
+      const current = scoreEl.textContent.split(' - ');
+      let home = parseInt(current[0]);
+      let away = parseInt(current[1]);
+
+      if (event.team === 'home') home++;
+      if (event.team === 'away') away++;
+
+      scoreEl.textContent = `${home} - ${away}`;
+    }
+  </script>
+</body>
+
+</html>
