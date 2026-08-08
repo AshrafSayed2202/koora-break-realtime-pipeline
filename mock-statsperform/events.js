@@ -5,8 +5,6 @@ const EVENT_TYPES = [
     'YELLOW_CARD',
     'RED_CARD',
     'SUBSTITUTION',
-    'KICK_OFF',
-    'FULL_TIME',
 ];
 
 const PLAYERS = {
@@ -39,39 +37,48 @@ function createEvent(matchId, overrides = {}) {
         eventId: uuidv4(),
         matchId,
         type,
-        team,
-        minute: overrides.minute ?? Math.floor(Math.random() * 90) + 1,
-        player: overrides.player || getRandomPlayer(team),
+        team: type === 'FULL_TIME' || type === 'KICK_OFF' ? null : team,
+        minute: overrides.minute ?? 1,
+        player: type === 'FULL_TIME' || type === 'KICK_OFF' ? null : (overrides.player || getRandomPlayer(team)),
         timestamp: overrides.timestamp || new Date().toISOString(),
-        ...overrides,
     };
 }
 
-// Generate a realistic sequence of events for a match
-function generateMatchEvents(matchId, count = 12) {
+/**
+ * Generate a realistic chronological sequence of events for a match
+ */
+function generateMatchEvents(matchId, eventCount = 10) {
     const events = [];
 
-    // Always start with Kick Off
+    // 1. Kick Off
     events.push(
         createEvent(matchId, {
             type: 'KICK_OFF',
             minute: 1,
-            team: 'home',
-            player: null,
         })
     );
 
-    for (let i = 0; i < count - 2; i++) {
-        events.push(createEvent(matchId));
+    // 2. Generate events with increasing minutes
+    let currentMinute = 2;
+
+    for (let i = 0; i < eventCount; i++) {
+        // Jump forward a few minutes each time
+        currentMinute += Math.floor(Math.random() * 8) + 2; // +2 to +9 minutes
+
+        if (currentMinute >= 90) break;
+
+        events.push(
+            createEvent(matchId, {
+                minute: currentMinute,
+            })
+        );
     }
 
-    // Always end with Full Time
+    // 3. Full Time at 90
     events.push(
         createEvent(matchId, {
             type: 'FULL_TIME',
             minute: 90,
-            team: null,
-            player: null,
         })
     );
 
