@@ -61,6 +61,7 @@
       background: #0ea5e9;
       color: white;
       font-weight: 600;
+      transition: background 0.2s;
     }
 
     button:hover {
@@ -69,6 +70,10 @@
 
     button.unsubscribe {
       background: #ef4444;
+    }
+
+    button.unsubscribe:hover {
+      background: #dc2626;
     }
 
     .status {
@@ -89,10 +94,24 @@
     }
 
     .score {
-      font-size: 42px;
+      font-size: 48px;
       font-weight: bold;
-      margin: 10px 0;
+      margin: 12px 0;
       color: #38bdf8;
+    }
+
+    .match-status {
+      font-size: 14px;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+
+    .match-status.live {
+      color: #4ade80;
+    }
+
+    .match-status.finished {
+      color: #f87171;
     }
 
     .events {
@@ -102,7 +121,7 @@
       border-radius: 12px;
       padding: 16px;
       border: 1px solid #334155;
-      max-height: 500px;
+      max-height: 480px;
       overflow-y: auto;
     }
 
@@ -113,6 +132,7 @@
       justify-content: space-between;
       align-items: center;
       font-size: 14px;
+      animation: fadeIn 0.25s ease;
     }
 
     .event:last-child {
@@ -121,7 +141,6 @@
 
     .event-type {
       font-weight: 600;
-      color: #38bdf8;
     }
 
     .goal {
@@ -134,6 +153,32 @@
 
     .red {
       color: #f87171;
+    }
+
+    .kickoff {
+      color: #38bdf8;
+    }
+
+    .fulltime {
+      color: #a78bfa;
+    }
+
+    .empty {
+      text-align: center;
+      color: #64748b;
+      padding: 30px 20px;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(-6px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
   </style>
 </head>
@@ -155,6 +200,11 @@
       <option value="match_008">Match 008</option>
       <option value="match_009">Match 009</option>
       <option value="match_010">Match 010</option>
+      <option value="match_011">Match 011</option>
+      <option value="match_012">Match 012</option>
+      <option value="match_013">Match 013</option>
+      <option value="match_014">Match 014</option>
+      <option value="match_015">Match 015</option>
     </select>
 
     <button onclick="subscribe()">Subscribe</button>
@@ -166,17 +216,15 @@
   <div class="scoreboard">
     <div>Current Match: <strong id="currentMatch">—</strong></div>
     <div class="score" id="score">0 - 0</div>
-    <div id="matchStatus">Waiting...</div>
+    <div class="match-status" id="matchStatus">Waiting...</div>
   </div>
 
   <div class="events" id="events">
-    <div style="text-align:center; color:#64748b; padding: 20px;">
-      No events yet. Subscribe to a match.
-    </div>
+    <div class="empty">No events yet. Subscribe to a match.</div>
   </div>
 
   <script>
-    const socket = io('http://localhost:3000'); // NestJS default port
+      const socket = io('http://localhost:3000');
     let currentMatchId = null;
 
     const statusEl = document.getElementById('status');
@@ -185,6 +233,7 @@
     const currentMatchEl = document.getElementById('currentMatch');
     const matchStatusEl = document.getElementById('matchStatus');
 
+      // ========== Connection ==========
     socket.on('connect', () => {
       statusEl.textContent = 'Connected to Koora Break Backend';
       statusEl.style.color = '#4ade80';
@@ -195,16 +244,15 @@
       statusEl.style.color = '#f87171';
     });
 
-    // Receive live events
+      // ========== Live Events ==========
     socket.on('matchEvent', (event) => {
-      addEvent(event);
+      if (!event || !event.type) return; // حماية من الأحداث التالفة
 
-      // Update score if needed
-      if (event.type === 'GOAL') {
-        updateScoreFromEvent(event);
-      }
+      addEvent(event);
+      updateFromEvent(event);
     });
 
+      // ========== Subscribe ==========
     function subscribe() {
       const matchId = document.getElementById('matchSelect').value;
       currentMatchId = matchId;
@@ -213,23 +261,31 @@
       socket.emit('subscribe', { matchId }, (response) => {
         console.log('Subscribe response:', response);
 
-        // Clear old events
+        // امسح الأحداث القديمة
         eventsEl.innerHTML = '';
 
-        if (response.currentState) {
-          // Late joiner: show current score + past events
+        if (response && response.currentState) {
+        // Late Joiner → اعرض الحالة الحالية كاملة
           const state = response.currentState;
-          scoreEl.textContent = `${state.homeScore} - ${state.awayScore}`;
-          matchStatusEl.textContent = state.status;
 
-          state.events.forEach(event => addEvent(event));
+          scoreEl.textContent = `${state.homeScore} - ${state.awayScore}`;
+          setMatchStatus(state.status);
+
+          if (state.events && state.events.length > 0) {
+            // اعرض الأحداث من الأقدم للأحدث
+            state.events.forEach(event => addEvent(event, false));
+          } else {
+            eventsEl.innerHTML = '<div class="empty">No events yet for this match.</div>';
+          }
         } else {
           scoreEl.textContent = '0 - 0';
-          matchStatusEl.textContent = 'LIVE';
+          setMatchStatus('LIVE');
+          eventsEl.innerHTML = '<div class="empty">Waiting for events...</div>';
         }
       });
     }
 
+      // ========== Unsubscribe ==========
     function unsubscribe() {
       if (!currentMatchId) return;
 
@@ -237,41 +293,75 @@
       currentMatchId = null;
       currentMatchEl.textContent = '—';
       scoreEl.textContent = '0 - 0';
-      matchStatusEl.textContent = 'Waiting...';
-      eventsEl.innerHTML = `<div style="text-align:center; color:#64748b; padding: 20px;">Unsubscribed</div>`;
+      setMatchStatus(null);
+      eventsEl.innerHTML = '<div class="empty">Unsubscribed</div>';
     }
 
-    function addEvent(event) {
+      // ========== Helpers ==========
+      function addEvent(event, prepend = true) {
+        // شيل رسالة الـ empty لو موجودة
+        const emptyMsg = eventsEl.querySelector('.empty');
+        if (emptyMsg) emptyMsg.remove();
+
       const div = document.createElement('div');
       div.className = 'event';
 
       let typeClass = '';
       if (event.type === 'GOAL') typeClass = 'goal';
-      if (event.type === 'YELLOW_CARD') typeClass = 'card';
-      if (event.type === 'RED_CARD') typeClass = 'red';
+      else if (event.type === 'YELLOW_CARD') typeClass = 'card';
+      else if (event.type === 'RED_CARD') typeClass = 'red';
+      else if (event.type === 'KICK_OFF') typeClass = 'kickoff';
+      else if (event.type === 'FULL_TIME') typeClass = 'fulltime';
+
+      const playerText = event.player ? ` — ${event.player}` : '';
+      const teamText = event.team ? ` (${event.team})` : '';
 
       div.innerHTML = `
         <div>
           <span class="event-type ${typeClass}">${event.type}</span>
-          ${event.player ? ` — ${event.player}` : ''}
-          ${event.team ? ` (${event.team})` : ''}
+          ${playerText}${teamText}
         </div>
-        <div>${event.minute}'</div>
+        <div>${event.minute ?? '-'}'</div>
       `;
 
-      eventsEl.prepend(div);
+      if (prepend) {
+        eventsEl.prepend(div);
+      } else {
+        eventsEl.appendChild(div);
+      }
     }
 
-    function updateScoreFromEvent(event) {
-      // Simple visual update (the real source of truth is the backend state)
-      const current = scoreEl.textContent.split(' - ');
-      let home = parseInt(current[0]);
-      let away = parseInt(current[1]);
+      function updateFromEvent(event) {
+        // تحديث الحالة
+        if (event.type === 'KICK_OFF') {
+          setMatchStatus('LIVE');
+        }
+        if (event.type === 'FULL_TIME') {
+          setMatchStatus('FINISHED');
+        }
 
-      if (event.team === 'home') home++;
-      if (event.team === 'away') away++;
+        // تحديث النتيجة بطريقة آمنة
+        if (event.type === 'GOAL' && event.team) {
+          const parts = scoreEl.textContent.split(' - ');
+          let home = parseInt(parts[0]) || 0;
+          let away = parseInt(parts[1]) || 0;
 
-      scoreEl.textContent = `${home} - ${away}`;
+        if (event.team === 'home') home++;
+        if (event.team === 'away') away++;
+
+        scoreEl.textContent = `${home} - ${away}`;
+          }
+        }
+
+        function setMatchStatus(status) {
+          if (!status) {
+            matchStatusEl.textContent = 'Waiting...';
+            matchStatusEl.className = 'match-status';
+            return;
+          }
+
+          matchStatusEl.textContent = status;
+          matchStatusEl.className = 'match-status ' + status.toLowerCase();
     }
   </script>
 </body>
