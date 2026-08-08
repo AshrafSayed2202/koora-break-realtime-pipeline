@@ -1,0 +1,15 @@
+{
+  "name": "koora-break-realtime-pipeline",
+  "version": "1.0.0",
+  "description": "Real-time match event pipeline for Koora Break",
+  "scripts": {
+    "install:all": "npm install --prefix mock-statsperform && npm install --prefix koora-backend",
+    "start:mock": "node mock-statsperform/server.js",
+    "start:backend": "npm run start:dev --prefix koora-backend",
+    "start": "npx concurrently -n MOCK,BACKEND,CLIENT -c blue,green,yellow \"npm run start:mock\" \"npm run start:backend\" \"sleep 3 && npm run open\"",
+    "open": "xdg-open client/index.html || open client/index.html || start client/index.html"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
